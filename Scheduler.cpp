@@ -2,10 +2,21 @@
 #include <vector>
 #include <queue>
 #include <pthread.h>
- 
+#include <time.h>
+
 using namespace std;
- 
-pthread_t cpuThreads[4];
+
+#define cpuCount 4
+
+pthread_t cpuThreads[cpuCount];
+
+pthread_t mainThread;
+
+long long int CLOCK; //time
+
+pthread_mutex_t mainThread_mutex;
+
+
 
 enum Resources {
     R1,
@@ -31,6 +42,15 @@ enum State {
     Running
 };
 
+enum CPUState {
+    CPU_Running,
+    CPU_Waiting,
+    CPU_Idle,
+    CPU_Preempt,
+    CPU_Terminate
+
+};
+
 struct T {
 
     string name;
@@ -51,50 +71,274 @@ struct T {
 
 };
 
+struct CPU_data {
+    T* currentTask;
+
+    enum CPUState state;
+
+    pthread_cond_t wake;
+};
+
 vector<T*> ReadyQueue;
 
 vector<T*> WaitingQueue;
 
-int R1num,R2num,R3num;
+int R1num, R2num, R3num;
 
 int n;
 
-struct arg{
+CPU_data cpu_datas[cpuCount];
+
+struct arg {
+
+    int id;
 
 };
 
-void *CPU(void * arguments){
+void* Main_thread(void* arguments);
 
-    while(ReadyQueue.size()!=0 or WaitingQueue.size()!=0){
+void* CPU_thread(void* arguments);
 
-        
-        //increment semaphore until burst
+void start() {
+
+    for (int i = 0; i < cpuCount; i++) {
+
+        cpu_datas[i] = *new CPU_data();
+
+        cpu_datas[i].currentTask = NULL;
+
+        cpu_datas[i].state = CPU_Idle;
+
+        pthread_cond_init(&cpu_datas[i].wake, NULL);
 
     }
+
+    pthread_mutex_init(&mainThread_mutex, NULL);
+
+    pthread_create(&mainThread, NULL, Main_thread, NULL);
+
+
+
+    for (int i = 0; i < cpuCount; i++) {
+
+        struct arg* args = new struct arg();
+
+        args->id = i;
+
+        pthread_create(&cpuThreads[i], NULL, CPU_thread, (void*)args);
+
+    }
+
 }
 
-void * scheduler(void * arguments){
+void* CPU_thread(void* arguments) {
 
-    for (int i = 0; i < 4; i++) {
-        pthread_create(&cpuThreads[i], NULL,CPU,NULL);
+    struct arg* args = (struct arg*)arguments;
+
+    int cpuID = args->id;
+
+    pthread_mutex_lock(&mainThread_mutex);
+
+    pthread_cond_signal(&cpu_datas[cpuID].wake);
+
+
+    if (cpu_datas[cpuID].currentTask == NULL) {
+
+        cpu_datas[cpuID].state = CPU_Idle;
+    }
+    else {
+
+        cpu_datas[cpuID].state = CPU_Running;
+
+        while (cpu_datas[cpuID].state == CPU_Running) {
+
+            pthread_cond_wait(&cpu_datas[cpuID].wake, &mainThread_mutex);
+
+        }
+
+
+
+    }
+
+    CPUState currentState = cpu_datas[cpuID].state;
+
+
+    pthread_mutex_unlock(&mainThread_mutex);
+
+
+    switch (currentState)
+    {
+    case CPU_Terminate:
+        //terminate
+        break;
+    case CPU_Idle:
+        //Idle
+        break;
+    case CPU_Preempt:
+        //preempt
+        break;
+    case CPU_Waiting:
+        //preempt
+        break;
+
+
+    default:
+        break;
+    }
+
+
+
+
+
+
+
+}
+
+void proccess(int cpuId, T* currentTask) {
+
+    if (currentTask->Burst > 0) {
+
+        currentTask->Burst--;
+
+        currentTask->CpuTime++;
+
+        //check for preemtion
+
+        {
+            cpu_datas[cpuId].state = CPU_Preempt;
+
+            pthread_cond_signal(&cpu_datas[cpuId].wake);
+        }
+
+        //preempt
+
+
+        pthread_cond_wait(&cpu_datas[cpuId].wake, &mainThread_mutex);
+
+
+    }
+    else {
+
+        cpu_datas[cpuId].state = CPU_Terminate;
+
+        pthread_cond_signal(&cpu_datas[cpuId].wake);
+
+        //terminate
+
+        //we use the cond variable as a semaphore in order to make sure that the main thread schedules a proccess to the cpu before we do all of this
+        pthread_cond_wait(&cpu_datas[cpuId].wake, &mainThread_mutex);
+
+
     }
 
 
 }
+
+void print() {
+
+    cout << " R1 : " << R1num << " R2 : " << R2num << " R3 : " << R3num << endl;
+
+    cout << "Ready Queue :" << endl;
+
+    cout << "[";
+
+    for (int i = 0; i < ReadyQueue.size(); i++) {
+
+        cout << ReadyQueue[i]->name;
+
+        if (i != ReadyQueue.size() - 1)
+            cout << "-";
+    }
+    cout << "]" << endl;
+
+    cout << "[";
+
+    for (int i = 0; i < WaitingQueue.size(); i++) {
+
+        cout << WaitingQueue[i]->name;
+
+        if (i != WaitingQueue.size() - 1)
+            cout << "-";
+    }
+    cout << "]" << endl;
+
+    for (int i = 0; i < cpuCount; i++) {
+
+        cout << "CPU" << i + 1 << ":" << "[";
+
+        if (cpu_datas[i].currentTask != nullptr) {
+            cout << cpu_datas[i].currentTask->name;
+        }
+        else {
+            cout << "Idle";
+        }
+
+
+        cout << "]";
+
+    }
+
+
+}
+
+void* Main_thread(void* arguments) {
+
+    while (true) {
+
+        pthread_mutex_lock(&mainThread_mutex);
+
+
+        if (ReadyQueue.size() == 0 and WaitingQueue.size() == 0) {
+            exit(0);
+        }
+
+        for (int i = 0; i < cpuCount; i++) {
+
+            T* nextTask;//=az safe ready va algorithm ha
+
+            proccess(i, nextTask);
+
+
+        }
+
+        CLOCK++;
+
+        print();
+
+        pthread_mutex_unlock(&mainThread_mutex);
+
+
+        //sleep
+
+        struct timespec tSpec;
+
+        tSpec.tv_sec = 1 / 1000000;
+
+        tSpec.tv_nsec = (1 % 1000000) * 1000;
+
+        while (nanosleep(&tSpec, &tSpec) != 0);
+
+
+    }
+
+
+}
+
+
 
 
 int main()
 {
 
 
-    cin>>R1num>>R2num>>R3num;
+    cin >> R1num >> R2num >> R3num;
 
 
-    cin>>n;
+    cin >> n;
 
-    for(int i=0;i<n;i++){
+    for (int i = 0; i < n; i++) {
 
-        T *tempTask=new T();
+        T* tempTask = new T();
 
         char tempTasks;
 
@@ -102,68 +346,66 @@ int main()
 
         int tempBurst;
 
-        cin>>tempName>>tempTasks>>tempBurst;
+        cin >> tempName >> tempTasks >> tempBurst;
 
-        tempTask->name=tempName;
+        tempTask->name = tempName;
 
-        tempTask->num_R_needed=2;
-
-
-        tempTask->state=Ready;
-
-        tempTask->Burst=tempBurst;
+        tempTask->num_R_needed = 2;
 
 
-        if(tempTasks=='X'){
+        tempTask->state = Ready;
 
-            tempTask->Task=X;
+        tempTask->Burst = tempBurst;
 
-            tempTask->priority=3;
 
-            tempTask->R_needed[0]=R1;
+        if (tempTasks == 'X') {
 
-            tempTask->R_needed[1]=R2;
-            
+            tempTask->Task = X;
 
-        }
-        else if(tempTasks=='Y'){
+            tempTask->priority = 3;
 
-            tempTask->Task=Y;
+            tempTask->R_needed[0] = R1;
 
-            tempTask->priority=2;
+            tempTask->R_needed[1] = R2;
 
-            tempTask->R_needed[0]=R2;
-
-            tempTask->R_needed[1]=R3;
 
         }
-        else if(tempTasks=='Z'){
+        else if (tempTasks == 'Y') {
 
-            tempTask->Task=Z;
+            tempTask->Task = Y;
 
-            tempTask->priority=1;
+            tempTask->priority = 2;
 
-            tempTask->R_needed[0]=R1;
+            tempTask->R_needed[0] = R2;
 
-            tempTask->R_needed[1]=R3;
+            tempTask->R_needed[1] = R3;
+
+        }
+        else if (tempTasks == 'Z') {
+
+            tempTask->Task = Z;
+
+            tempTask->priority = 1;
+
+            tempTask->R_needed[0] = R1;
+
+            tempTask->R_needed[1] = R3;
 
         }
 
         ReadyQueue.push_back(tempTask);
 
 
-        
+
     }
 
-    pthread_t schedulerThread;
-
-    pthread_create(&schedulerThread, NULL, scheduler, NULL);
+    start();
 
     for (int i = 0; i < 4; i++) {
         pthread_join(cpuThreads[i], NULL);
     }
-    pthread_join(schedulerThread, NULL);
-    
+    pthread_join(mainThread, NULL);
+
 
 
     return 0;
