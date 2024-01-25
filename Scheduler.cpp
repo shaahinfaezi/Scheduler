@@ -4,16 +4,7 @@
 #include <pthread.h>
 #include <time.h>
 
-<<<<<<< HEAD
-
 using namespace std;
-//priority queue START
-
-
-//priority queue END
-=======
-using namespace std;
->>>>>>> 95f3d64b00c8432991137c3b11ef0b6721937fa7
 
 #define cpuCount 4
 
@@ -87,8 +78,6 @@ struct T {
 struct CPU_data {
 
     T* currentTask;
-<<<<<<< HEAD
-=======
 
     enum CPUState state;
 
@@ -99,16 +88,6 @@ vector<T> ReadyQueue;
 
 vector<T> WaitingQueue;
 
-<<<<<<< HEAD
-    pthread_cond_t wake;
-};
-
-vector<T> ReadyQueue;
-
-vector<T> WaitingQueue;
-
-=======
->>>>>>> 95f3d64b00c8432991137c3b11ef0b6721937fa7
 int R1num, R2num, R3num;
 
 int n;
@@ -274,7 +253,6 @@ void print() {
     for (int i = 0; i < ReadyQueue.size(); i++) {
 
         cout << ReadyQueue[i].name;
->>>>>>> 95f3d64b00c8432991137c3b11ef0b6721937fa7
 
         if (i != ReadyQueue.size() - 1)
             cout << "-";
@@ -286,7 +264,6 @@ void print() {
     for (int i = 0; i < WaitingQueue.size(); i++) {
 
         cout << WaitingQueue[i].name;
->>>>>>> 95f3d64b00c8432991137c3b11ef0b6721937fa7
 
         if (i != WaitingQueue.size() - 1)
             cout << "-";
@@ -485,7 +462,6 @@ int main()
     for (int i = 0; i < n; i++) {
 
         T tempTask = *new T();
->>>>>>> 95f3d64b00c8432991137c3b11ef0b6721937fa7
 
         char tempTasks;
 
