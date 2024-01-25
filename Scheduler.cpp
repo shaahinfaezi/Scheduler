@@ -10,6 +10,8 @@ using namespace std;
 
 #define TimeQ 5
 
+#define WakeupTime 3
+
 pthread_t cpuThreads[cpuCount];
 
 pthread_t mainThread;
@@ -17,6 +19,16 @@ pthread_t mainThread;
 long long int CLOCK; //time
 
 pthread_mutex_t mainThread_mutex;
+
+pthread_mutex_t readyMutex;
+
+pthread_mutex_t waitingMutex;
+
+pthread_mutex_t WR_mutex;
+
+
+string algo;
+bool RR;
 
 
 
@@ -82,6 +94,8 @@ struct CPU_data {
     enum CPUState state;
 
     pthread_cond_t wake;
+
+    int preemtionTimer;
 };
 
 vector<T> ReadyQueue;
@@ -104,6 +118,223 @@ void* Main_thread(void* arguments);
 
 void* CPU_thread(void* arguments);
 
+
+pthread_cond_t idleCond;
+pthread_mutex_t currentMutex;
+
+
+//request
+bool request() {
+    pthread_mutex_lock(&readyMutex);
+    T task = ReadyQueue.front();
+    pthread_mutex_unlock(&readyMutex);
+
+    pthread_mutex_lock(&waitingMutex);
+    if (task.Task == X) {
+        if (R1num == 0 && R2num == 0) {
+            WaitingQueue.push_back(task);
+            return false;
+        }
+        else {
+            return true;
+        }
+    }
+    else if (task.Task == Y) {
+        if (R3num == 0 && R2num == 0) {
+            WaitingQueue.push_back(task);
+            return false;
+        }
+        else {
+            return true;
+        }
+    }
+    else { //else if (task.Task == Z) {
+        if (R1num == 0 || R3num == 0) {
+            WaitingQueue.push_back(task);
+            return false;
+        }
+        else {
+            return true;
+        }
+    }
+    pthread_mutex_unlock(&waitingMutex);
+}
+
+//schedule
+void schedule(int cpuID) {
+
+    if (request() == true) {
+
+
+        pthread_mutex_lock(&readyMutex);
+
+        T t = ReadyQueue.front();
+
+        ReadyQueue.erase(ReadyQueue.begin());
+
+        pthread_mutex_unlock(&readyMutex);
+
+        pthread_mutex_lock(&currentMutex);
+
+        cpu_datas[cpuID].currentTask = &t;
+
+        pthread_mutex_lock(&currentMutex);
+
+    }
+
+
+}
+
+//idle
+void idle(int cpuID) {
+    pthread_mutex_lock(&readyMutex);
+
+    while (ReadyQueue.size() == 0) {
+        pthread_cond_wait(&idleCond, &readyMutex);
+    }
+    pthread_mutex_lock(&readyMutex);
+
+    schedule(cpuID);
+
+
+}
+
+
+
+//RR pushback
+void RRpushback(T& task) {
+
+    pthread_mutex_lock(&readyMutex);
+
+    ReadyQueue.push_back(task);
+    pthread_cond_broadcast(&idleCond);
+
+    pthread_mutex_unlock(&readyMutex);
+}
+
+
+//preempt
+void preempt(T& currentTask, int cpuID) {
+    //check for sync
+    RRpushback(currentTask);
+
+    schedule(cpuID);
+
+
+
+}
+
+
+
+
+//aging
+void age(T& task)
+{
+    if (task.agetime >= 5) {
+        task.agetime = 0;
+        task.priority = task.priority - 1;
+    }
+}
+
+void age_all() {
+
+    pthread_mutex_lock(&waitingMutex);
+
+
+    for (int i = 0; i < WaitingQueue.size(); i++) {
+
+        if (WaitingQueue[i].agetime < WakeupTime && WaitingQueue[i].priority != 1) {
+
+            WaitingQueue[i].agetime = WaitingQueue[i].agetime + 1;
+        }
+        else if (WaitingQueue[i].agetime == WakeupTime) {
+            WaitingQueue[i].agetime = 0;
+            WaitingQueue[i].priority = WaitingQueue[i].priority - 1;
+        }
+    }
+
+    pthread_mutex_unlock(&waitingMutex);
+}
+
+
+
+
+//terminate
+void Terminate(T& task) {
+
+    pthread_mutex_lock(&readyMutex);
+    for (int i = 0; i < ReadyQueue.size(); i++) {
+        if (ReadyQueue[i].name == task.name)
+        {
+            ReadyQueue.erase(ReadyQueue.begin() + i);
+        }
+    }
+
+    pthread_mutex_unlock(&readyMutex);
+
+
+    pthread_mutex_lock(&waitingMutex);
+    for (int i = 0; i < WaitingQueue.size(); i++) {
+        if (WaitingQueue[i].name == task.name)
+        {
+            WaitingQueue.erase(WaitingQueue.begin() + i);
+        }
+    }
+
+    pthread_mutex_unlock(&waitingMutex);
+}
+
+//sort
+void WaitingQueueprioritysort() {
+
+    pthread_mutex_lock(&waitingMutex);
+
+    for (int i = 1; i < WaitingQueue.size(); i++) {
+        T var1 = WaitingQueue[i];
+        int j = i - 1;
+        while (j >= 0 && WaitingQueue[j].priority > var1.priority) {
+            WaitingQueue[j + 1] = WaitingQueue[j];
+            j--;
+        }
+        WaitingQueue[j + 1] = var1;
+    }
+    pthread_mutex_unlock(&waitingMutex);
+}
+
+void ReadyQueueprioritysort() {
+
+    pthread_mutex_lock(&readyMutex);
+
+    for (int i = 1; i < ReadyQueue.size(); i++) {
+        T var1 = ReadyQueue[i];
+        int j = i - 1;
+        while (j >= 0 && ReadyQueue[j].priority > var1.priority) {
+            ReadyQueue[j + 1] = ReadyQueue[j];
+            j--;
+        }
+        ReadyQueue[j + 1] = var1;
+    }
+
+    pthread_mutex_lock(&readyMutex);
+}
+
+void ReadyQueueBurstsort() {
+
+    pthread_mutex_lock(&readyMutex);
+
+    for (int i = 1; i < ReadyQueue.size(); i++) {
+        T var1 = ReadyQueue[i];
+        int j = i - 1;
+        while (j >= 0 && ReadyQueue[j].Burst > var1.Burst) {
+            ReadyQueue[j + 1] = ReadyQueue[j];
+            j--;
+        }
+        ReadyQueue[j + 1] = var1;
+    }
+
+    pthread_mutex_unlock(&readyMutex);
+}
+
 void start() {
 
     for (int i = 0; i < cpuCount; i++) {
@@ -114,12 +345,20 @@ void start() {
 
         cpu_datas[i].state = CPU_Idle;
 
+        if (RR == true) {
+            cpu_datas[i].preemtionTimer = TimeQ;
+        }
+
         pthread_cond_init(&cpu_datas[i].wake, NULL);
 
     }
 
-    pthread_mutex_init(&mainThread_mutex, NULL);
 
+    pthread_mutex_init(&mainThread_mutex, NULL);
+    pthread_mutex_init(&readyMutex, NULL);
+    pthread_mutex_init(&waitingMutex, NULL);
+    pthread_mutex_init(&WR_mutex, NULL);
+    pthread_mutex_init(&currentMutex, NULL);
 
 
     for (int i = 0; i < cpuCount; i++) {
@@ -177,16 +416,30 @@ void* CPU_thread(void* arguments) {
         switch (currentState)
         {
         case CPU_Terminate:
-            //terminate
+            pthread_mutex_lock(&WR_mutex);
+
+            Terminate(*cpu_datas[cpuID].currentTask);
+
+            pthread_mutex_unlock(&WR_mutex);
+
             break;
         case CPU_Idle:
-            //Idle
+            pthread_mutex_lock(&WR_mutex);
+
+
+            idle(cpuID);
+
+            pthread_mutex_unlock(&WR_mutex);
             break;
         case CPU_Preempt:
-            //preempt
+            pthread_mutex_lock(&WR_mutex);
+
+            preempt(*cpu_datas[cpuID].currentTask, cpuID);
+
+            pthread_mutex_unlock(&WR_mutex);
             break;
         case CPU_Waiting:
-            //preempt
+            //wakeup
             break;
 
 
@@ -210,18 +463,22 @@ void proccess(int cpuId, T currentTask) {
 
         currentTask.CpuTime++;
 
-        //check for preemtion
+        cpu_datas[cpuId].preemtionTimer--;
+
+        if (cpu_datas[cpuId].preemtionTimer == 0)
 
         {
             cpu_datas[cpuId].state = CPU_Preempt;
 
             pthread_cond_signal(&cpu_datas[cpuId].wake);
+
+
+            pthread_cond_wait(&cpu_datas[cpuId].wake, &mainThread_mutex);
         }
 
         //preempt
 
 
-        pthread_cond_wait(&cpu_datas[cpuId].wake, &mainThread_mutex);
 
 
     }
@@ -332,120 +589,7 @@ void* Main_thread(void* arguments) {
 
 }
 
-//request
-bool request(T task) {
-    if (task.Task == X) {
-        if (R1num == 0 && R2num == 0) {
-            WaitingQueue.push_back(task);
-            return false;
-        }
-    }
-    else if (task.Task == Y) {
-        if (R3num == 0 && R2num == 0) {
-            WaitingQueue.push_back(task);
-            return false;
-        }
-    }
-    else if (task.Task == Z) {
-        if (R1num == 0 || R3num == 0) {
-            WaitingQueue.push_back(task);
-            return false;
-        }
-    }
-    else {
-        return true;
-    }
-}
 
-
-
-
-
-//aging
-void age(T& task)
-{
-    if (task.agetime >= 5) {
-        task.agetime = 0;
-        task.priority = task.priority - 1;
-    }
-}
-
-void age_all() {
-
-    for (int i = 0; i < WaitingQueue.size(); i++) {
-
-        if (WaitingQueue[i].agetime < TimeQ && WaitingQueue[i].priority != 1) {
-
-            WaitingQueue[i].agetime = WaitingQueue[i].agetime + 1;
-        }
-        else if (WaitingQueue[i].agetime == TimeQ) {
-            WaitingQueue[i].agetime = 0;
-            WaitingQueue[i].priority = WaitingQueue[i].priority - 1;
-        }
-    }
-}
-
-
-
-//RR pushback
-void RRpushback(T task) {
-    ReadyQueue.push_back(task);
-}
-
-
-
-//terminate
-void terminate(T task) {
-    for (int i = 0; i < ReadyQueue.size(); i++) {
-        if (ReadyQueue[i].name == task.name)
-        {
-            ReadyQueue.erase(ReadyQueue.begin() + i);
-        }
-    }
-    for (int i = 0; i < WaitingQueue.size(); i++) {
-        if (WaitingQueue[i].name == task.name)
-        {
-            WaitingQueue.erase(WaitingQueue.begin() + i);
-        }
-    }
-}
-
-//sort
-void WaitingQueueprioritysort() {
-    for (int i = 1; i < WaitingQueue.size(); i++) {
-        T var1 = WaitingQueue[i];
-        int j = i - 1;
-        while (j >= 0 && WaitingQueue[j].priority > var1.priority) {
-            WaitingQueue[j + 1] = WaitingQueue[j];
-            j--;
-        }
-        WaitingQueue[j + 1] = var1;
-    }
-}
-
-void ReadyQueueprioritysort() {
-    for (int i = 1; i < ReadyQueue.size(); i++) {
-        T var1 = ReadyQueue[i];
-        int j = i - 1;
-        while (j >= 0 && ReadyQueue[j].priority > var1.priority) {
-            ReadyQueue[j + 1] = ReadyQueue[j];
-            j--;
-        }
-        ReadyQueue[j + 1] = var1;
-    }
-}
-
-void ReadyQueueBurstsort() {
-    for (int i = 1; i < ReadyQueue.size(); i++) {
-        T var1 = ReadyQueue[i];
-        int j = i - 1;
-        while (j >= 0 && ReadyQueue[j].Burst > var1.Burst) {
-            ReadyQueue[j + 1] = ReadyQueue[j];
-            j--;
-        }
-        ReadyQueue[j + 1] = var1;
-    }
-}
 
 
 
@@ -453,6 +597,7 @@ void ReadyQueueBurstsort() {
 int main()
 {
 
+    cin >> algo;
 
     cin >> R1num >> R2num >> R3num;
 
@@ -520,7 +665,22 @@ int main()
 
 
 
+
     }
+
+    RR = false;
+
+    if (algo == "RR") {
+        ReadyQueueprioritysort();
+        RR = true;
+    }
+    else if (algo == "FCFS") {
+        ReadyQueueprioritysort();
+    }
+    else if (algo == "SJF") {
+        ReadyQueueBurstsort();
+    }
+
 
     start();
 
