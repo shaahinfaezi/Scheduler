@@ -4,12 +4,16 @@
 #include <pthread.h>
 #include <time.h>
 
+<<<<<<< HEAD
 
 using namespace std;
 //priority queue START
 
 
 //priority queue END
+=======
+using namespace std;
+>>>>>>> 95f3d64b00c8432991137c3b11ef0b6721937fa7
 
 #define cpuCount 4
 
@@ -80,9 +84,20 @@ struct T {
 
 struct CPU_data {
     T* currentTask;
+<<<<<<< HEAD
+=======
 
     enum CPUState state;
 
+    pthread_cond_t wake;
+};
+
+vector<T*> ReadyQueue;
+>>>>>>> 95f3d64b00c8432991137c3b11ef0b6721937fa7
+
+    enum CPUState state;
+
+<<<<<<< HEAD
     pthread_cond_t wake;
 };
 
@@ -90,6 +105,8 @@ vector<T> ReadyQueue;
 
 vector<T> WaitingQueue;
 
+=======
+>>>>>>> 95f3d64b00c8432991137c3b11ef0b6721937fa7
 int R1num, R2num, R3num;
 
 int n;
@@ -251,7 +268,11 @@ void print() {
 
     for (int i = 0; i < ReadyQueue.size(); i++) {
 
+<<<<<<< HEAD
         cout << ReadyQueue[i].name;
+=======
+        cout << ReadyQueue[i]->name;
+>>>>>>> 95f3d64b00c8432991137c3b11ef0b6721937fa7
 
         if (i != ReadyQueue.size() - 1)
             cout << "-";
@@ -262,7 +283,11 @@ void print() {
 
     for (int i = 0; i < WaitingQueue.size(); i++) {
 
+<<<<<<< HEAD
         cout << WaitingQueue[i].name;
+=======
+        cout << WaitingQueue[i]->name;
+>>>>>>> 95f3d64b00c8432991137c3b11ef0b6721937fa7
 
         if (i != WaitingQueue.size() - 1)
             cout << "-";
@@ -333,6 +358,7 @@ void* Main_thread(void* arguments) {
 
 
 
+<<<<<<< HEAD
 
 //request
 bool request(T task) {
@@ -451,6 +477,8 @@ void ReadyQueueBurstsort() {
 
 
 
+=======
+>>>>>>> 95f3d64b00c8432991137c3b11ef0b6721937fa7
 
 int main()
 {
@@ -463,7 +491,11 @@ int main()
 
     for (int i = 0; i < n; i++) {
 
+<<<<<<< HEAD
         T tempTask;
+=======
+        T* tempTask = new T();
+>>>>>>> 95f3d64b00c8432991137c3b11ef0b6721937fa7
 
         char tempTasks;
 
@@ -473,6 +505,7 @@ int main()
 
         cin >> tempName >> tempTasks >> tempBurst;
 
+<<<<<<< HEAD
         tempTask.name = tempName;
 
         tempTask.num_R_needed = 2;
@@ -481,10 +514,21 @@ int main()
         tempTask.state = Ready;
 
         tempTask.Burst = tempBurst;
+=======
+        tempTask->name = tempName;
+
+        tempTask->num_R_needed = 2;
+
+
+        tempTask->state = Ready;
+
+        tempTask->Burst = tempBurst;
+>>>>>>> 95f3d64b00c8432991137c3b11ef0b6721937fa7
 
 
         if (tempTasks == 'X') {
 
+<<<<<<< HEAD
             tempTask.Task = X;
 
             tempTask.priority = 3;
@@ -492,11 +536,21 @@ int main()
             tempTask.R_needed[0] = R1;
 
             tempTask.R_needed[1] = R2;
+=======
+            tempTask->Task = X;
+
+            tempTask->priority = 3;
+
+            tempTask->R_needed[0] = R1;
+
+            tempTask->R_needed[1] = R2;
+>>>>>>> 95f3d64b00c8432991137c3b11ef0b6721937fa7
 
 
         }
         else if (tempTasks == 'Y') {
 
+<<<<<<< HEAD
             tempTask.Task = Y;
 
             tempTask.priority = 2;
@@ -504,10 +558,20 @@ int main()
             tempTask.R_needed[0] = R2;
 
             tempTask.R_needed[1] = R3;
+=======
+            tempTask->Task = Y;
+
+            tempTask->priority = 2;
+
+            tempTask->R_needed[0] = R2;
+
+            tempTask->R_needed[1] = R3;
+>>>>>>> 95f3d64b00c8432991137c3b11ef0b6721937fa7
 
         }
         else if (tempTasks == 'Z') {
 
+<<<<<<< HEAD
             tempTask.Task = Z;
 
             tempTask.priority = 1;
@@ -515,6 +579,15 @@ int main()
             tempTask.R_needed[0] = R1;
 
             tempTask.R_needed[1] = R3;
+=======
+            tempTask->Task = Z;
+
+            tempTask->priority = 1;
+
+            tempTask->R_needed[0] = R1;
+
+            tempTask->R_needed[1] = R3;
+>>>>>>> 95f3d64b00c8432991137c3b11ef0b6721937fa7
 
         }
 
