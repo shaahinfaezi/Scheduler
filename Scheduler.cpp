@@ -8,6 +8,8 @@ using namespace std;
 
 #define cpuCount 4
 
+#define TimeQ 5
+
 pthread_t cpuThreads[cpuCount];
 
 pthread_t mainThread;
@@ -69,9 +71,12 @@ struct T {
 
     int Burst;
 
+    int agetime;
+
 };
 
 struct CPU_data {
+
     T* currentTask;
 
     enum CPUState state;
@@ -79,9 +84,9 @@ struct CPU_data {
     pthread_cond_t wake;
 };
 
-vector<T*> ReadyQueue;
+vector<T> ReadyQueue;
 
-vector<T*> WaitingQueue;
+vector<T> WaitingQueue;
 
 int R1num, R2num, R3num;
 
@@ -115,8 +120,6 @@ void start() {
 
     pthread_mutex_init(&mainThread_mutex, NULL);
 
-    pthread_create(&mainThread, NULL, Main_thread, NULL);
-
 
 
     for (int i = 0; i < cpuCount; i++) {
@@ -129,78 +132,83 @@ void start() {
 
     }
 
+    pthread_create(&mainThread, NULL, Main_thread, NULL);
+
 }
 
 void* CPU_thread(void* arguments) {
 
-    struct arg* args = (struct arg*)arguments;
 
-    int cpuID = args->id;
+    while (true) {
 
-    pthread_mutex_lock(&mainThread_mutex);
+        struct arg* args = (struct arg*)arguments;
 
-    pthread_cond_signal(&cpu_datas[cpuID].wake);
+        int cpuID = args->id;
+
+        pthread_mutex_lock(&mainThread_mutex);
+
+        pthread_cond_signal(&cpu_datas[cpuID].wake);
 
 
-    if (cpu_datas[cpuID].currentTask == NULL) {
+        if (cpu_datas[cpuID].currentTask == NULL) {
 
-        cpu_datas[cpuID].state = CPU_Idle;
-    }
-    else {
+            cpu_datas[cpuID].state = CPU_Idle;
+        }
+        else {
 
-        cpu_datas[cpuID].state = CPU_Running;
+            cpu_datas[cpuID].state = CPU_Running;
 
-        while (cpu_datas[cpuID].state == CPU_Running) {
+            while (cpu_datas[cpuID].state == CPU_Running) {
 
-            pthread_cond_wait(&cpu_datas[cpuID].wake, &mainThread_mutex);
+                pthread_cond_wait(&cpu_datas[cpuID].wake, &mainThread_mutex);
 
+            }
+
+
+
+        }
+
+        CPUState currentState = cpu_datas[cpuID].state;
+
+
+        pthread_mutex_unlock(&mainThread_mutex);
+
+
+        switch (currentState)
+        {
+        case CPU_Terminate:
+            //terminate
+            break;
+        case CPU_Idle:
+            //Idle
+            break;
+        case CPU_Preempt:
+            //preempt
+            break;
+        case CPU_Waiting:
+            //preempt
+            break;
+
+
+        default:
+            break;
         }
 
 
 
+
     }
-
-    CPUState currentState = cpu_datas[cpuID].state;
-
-
-    pthread_mutex_unlock(&mainThread_mutex);
-
-
-    switch (currentState)
-    {
-    case CPU_Terminate:
-        //terminate
-        break;
-    case CPU_Idle:
-        //Idle
-        break;
-    case CPU_Preempt:
-        //preempt
-        break;
-    case CPU_Waiting:
-        //preempt
-        break;
-
-
-    default:
-        break;
-    }
-
-
-
-
-
 
 
 }
 
-void proccess(int cpuId, T* currentTask) {
+void proccess(int cpuId, T currentTask) {
 
-    if (currentTask->Burst > 0) {
+    if (currentTask.Burst > 0) {
 
-        currentTask->Burst--;
+        currentTask.Burst--;
 
-        currentTask->CpuTime++;
+        currentTask.CpuTime++;
 
         //check for preemtion
 
@@ -244,7 +252,7 @@ void print() {
 
     for (int i = 0; i < ReadyQueue.size(); i++) {
 
-        cout << ReadyQueue[i]->name;
+        cout << ReadyQueue[i].name;
 
         if (i != ReadyQueue.size() - 1)
             cout << "-";
@@ -255,7 +263,7 @@ void print() {
 
     for (int i = 0; i < WaitingQueue.size(); i++) {
 
-        cout << WaitingQueue[i]->name;
+        cout << WaitingQueue[i].name;
 
         if (i != WaitingQueue.size() - 1)
             cout << "-";
@@ -266,7 +274,7 @@ void print() {
 
         cout << "CPU" << i + 1 << ":" << "[";
 
-        if (cpu_datas[i].currentTask != nullptr) {
+        if (cpu_datas[i].currentTask != NULL) {
             cout << cpu_datas[i].currentTask->name;
         }
         else {
@@ -294,7 +302,7 @@ void* Main_thread(void* arguments) {
 
         for (int i = 0; i < cpuCount; i++) {
 
-            T* nextTask;//=az safe ready va algorithm ha
+            T nextTask;//=az safe ready va algorithm ha
 
             proccess(i, nextTask);
 
@@ -324,6 +332,121 @@ void* Main_thread(void* arguments) {
 
 }
 
+//request
+bool request(T task) {
+    if (task.Task == X) {
+        if (R1num == 0 && R2num == 0) {
+            WaitingQueue.push_back(task);
+            return false;
+        }
+    }
+    else if (task.Task == Y) {
+        if (R3num == 0 && R2num == 0) {
+            WaitingQueue.push_back(task);
+            return false;
+        }
+    }
+    else if (task.Task == Z) {
+        if (R1num == 0 || R3num == 0) {
+            WaitingQueue.push_back(task);
+            return false;
+        }
+    }
+    else {
+        return true;
+    }
+}
+
+
+
+
+
+//aging
+void age(T& task)
+{
+    if (task.agetime >= 5) {
+        task.agetime = 0;
+        task.priority = task.priority - 1;
+    }
+}
+
+void age_all() {
+
+    for (int i = 0; i < WaitingQueue.size(); i++) {
+
+        if (WaitingQueue[i].agetime < TimeQ && WaitingQueue[i].priority != 1) {
+
+            WaitingQueue[i].agetime = WaitingQueue[i].agetime + 1;
+        }
+        else if (WaitingQueue[i].agetime == TimeQ) {
+            WaitingQueue[i].agetime = 0;
+            WaitingQueue[i].priority = WaitingQueue[i].priority - 1;
+        }
+    }
+}
+
+
+
+//RR pushback
+void RRpushback(T task) {
+    ReadyQueue.push_back(task);
+}
+
+
+
+//terminate
+void terminate(T task) {
+    for (int i = 0; i < ReadyQueue.size(); i++) {
+        if (ReadyQueue[i].name == task.name)
+        {
+            ReadyQueue.erase(ReadyQueue.begin() + i);
+        }
+    }
+    for (int i = 0; i < WaitingQueue.size(); i++) {
+        if (WaitingQueue[i].name == task.name)
+        {
+            WaitingQueue.erase(WaitingQueue.begin() + i);
+        }
+    }
+}
+
+//sort
+void WaitingQueueprioritysort() {
+    for (int i = 1; i < WaitingQueue.size(); i++) {
+        T var1 = WaitingQueue[i];
+        int j = i - 1;
+        while (j >= 0 && WaitingQueue[j].priority > var1.priority) {
+            WaitingQueue[j + 1] = WaitingQueue[j];
+            j--;
+        }
+        WaitingQueue[j + 1] = var1;
+    }
+}
+
+void ReadyQueueprioritysort() {
+    for (int i = 1; i < ReadyQueue.size(); i++) {
+        T var1 = ReadyQueue[i];
+        int j = i - 1;
+        while (j >= 0 && ReadyQueue[j].priority > var1.priority) {
+            ReadyQueue[j + 1] = ReadyQueue[j];
+            j--;
+        }
+        ReadyQueue[j + 1] = var1;
+    }
+}
+
+void ReadyQueueBurstsort() {
+    for (int i = 1; i < ReadyQueue.size(); i++) {
+        T var1 = ReadyQueue[i];
+        int j = i - 1;
+        while (j >= 0 && ReadyQueue[j].Burst > var1.Burst) {
+            ReadyQueue[j + 1] = ReadyQueue[j];
+            j--;
+        }
+        ReadyQueue[j + 1] = var1;
+    }
+}
+
 
 
 
@@ -338,7 +461,7 @@ int main()
 
     for (int i = 0; i < n; i++) {
 
-        T* tempTask = new T();
+        T tempTask = *new T();
 
         char tempTasks;
 
@@ -348,48 +471,48 @@ int main()
 
         cin >> tempName >> tempTasks >> tempBurst;
 
-        tempTask->name = tempName;
+        tempTask.name = tempName;
 
-        tempTask->num_R_needed = 2;
+        tempTask.num_R_needed = 2;
 
 
-        tempTask->state = Ready;
+        tempTask.state = Ready;
 
-        tempTask->Burst = tempBurst;
+        tempTask.Burst = tempBurst;
 
 
         if (tempTasks == 'X') {
 
-            tempTask->Task = X;
+            tempTask.Task = X;
 
-            tempTask->priority = 3;
+            tempTask.priority = 3;
 
-            tempTask->R_needed[0] = R1;
+            tempTask.R_needed[0] = R1;
 
-            tempTask->R_needed[1] = R2;
+            tempTask.R_needed[1] = R2;
 
 
         }
         else if (tempTasks == 'Y') {
 
-            tempTask->Task = Y;
+            tempTask.Task = Y;
 
-            tempTask->priority = 2;
+            tempTask.priority = 2;
 
-            tempTask->R_needed[0] = R2;
+            tempTask.R_needed[0] = R2;
 
-            tempTask->R_needed[1] = R3;
+            tempTask.R_needed[1] = R3;
 
         }
         else if (tempTasks == 'Z') {
 
-            tempTask->Task = Z;
+            tempTask.Task = Z;
 
-            tempTask->priority = 1;
+            tempTask.priority = 1;
 
-            tempTask->R_needed[0] = R1;
+            tempTask.R_needed[0] = R1;
 
-            tempTask->R_needed[1] = R3;
+            tempTask.R_needed[1] = R3;
 
         }
 
