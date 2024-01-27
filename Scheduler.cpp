@@ -3,7 +3,7 @@
 #include <queue>
 #include <pthread.h>
 #include <time.h>
-
+#include <algorithm>
 using namespace std;
 
 #define cpuCount 4
@@ -122,6 +122,128 @@ void* CPU_thread(void* arguments);
 pthread_cond_t idleCond;
 pthread_mutex_t currentMutex;
 
+int tempReq(T task) {//reverse nums for sort
+    if (task.Task == X) {
+        if (R1num == 0 && R2num == 0) {
+            return 1;
+        }
+        else {
+            return 0;
+        }
+    }
+    else if (task.Task == Y) {
+        if (R3num == 0 && R2num == 0) {
+            return 1;
+        }
+        else {
+            return 0;
+        }
+    }
+    else { //else if (task.Task == Z) {
+        if (R1num == 0 && R3num == 0) {
+            return 1;
+        }
+        else {
+            return 0;
+        }
+    }
+}
+
+
+struct MyEntry {
+    int first;
+    int second;
+};
+
+bool compare_entry(const MyEntry& e1, const MyEntry& e2) {
+    if (e1.first != e2.first)
+        return (e1.first < e2.first);
+    return (e1.second < e2.second);
+}
+
+
+//sort
+void WaitingQueueprioritysort() {
+
+    pthread_mutex_lock(&waitingMutex);
+
+    vector<MyEntry> Entries;
+
+    for (int i = 0; i < WaitingQueue.size(); i++) {
+
+        struct MyEntry m = *new struct MyEntry();
+
+        m.first = tempReq(WaitingQueue[i]);
+
+        m.second = WaitingQueue[i].priority;
+
+        Entries.push_back(m);
+
+    }
+
+    sort(Entries.begin(), Entries.end(), compare_entry);
+
+
+    pthread_mutex_unlock(&waitingMutex);
+}
+
+void ReadyQueueprioritysort() {
+
+    pthread_mutex_lock(&readyMutex);
+
+    for (int i = 1; i < ReadyQueue.size(); i++) {
+        T var1 = ReadyQueue[i];
+        int j = i - 1;
+        while (j >= 0 && ReadyQueue[j].priority > var1.priority) {
+            ReadyQueue[j + 1] = ReadyQueue[j];
+            j--;
+        }
+        ReadyQueue[j + 1] = var1;
+    }
+
+    pthread_mutex_lock(&readyMutex);
+}
+
+void ReadyQueueBurstsort() {
+
+    pthread_mutex_lock(&readyMutex);
+
+    for (int i = 1; i < ReadyQueue.size(); i++) {
+        T var1 = ReadyQueue[i];
+        int j = i - 1;
+        while (j >= 0 && ReadyQueue[j].Burst > var1.Burst) {
+            ReadyQueue[j + 1] = ReadyQueue[j];
+            j--;
+        }
+        ReadyQueue[j + 1] = var1;
+    }
+
+    pthread_mutex_unlock(&readyMutex);
+}
+
+void WaitingQueueBurstsort() {
+
+    pthread_mutex_lock(&waitingMutex);
+
+    vector<MyEntry> Entries;
+
+    for (int i = 0; i < WaitingQueue.size(); i++) {
+
+        struct MyEntry m = *new struct MyEntry();
+
+        m.first = tempReq(WaitingQueue[i]);
+
+        m.second = WaitingQueue[i].Burst;
+
+        Entries.push_back(m);
+
+    }
+
+    sort(Entries.begin(), Entries.end(), compare_entry);
+
+    pthread_mutex_unlock(&waitingMutex);
+}
+
 
 //request
 bool request() {
@@ -160,26 +282,94 @@ bool request() {
     pthread_mutex_unlock(&waitingMutex);
 }
 
+void context_switch(T& t, int cpuID) {
+
+    if (t.Task == X) {
+        R1num--;
+        R2num--;
+    }
+    else if (t.Task == Y) {
+        R2num--;
+        R3num--;
+    }
+    else { //else if (task.Task == Z) {
+        R1num--;
+        R3num--;
+    }
+    t.state = Running;
+
+    ReadyQueue.erase(ReadyQueue.begin());
+
+    pthread_mutex_unlock(&readyMutex);
+    pthread_mutex_unlock(&waitingMutex);
+
+    pthread_mutex_lock(&currentMutex);
+
+    cpu_datas[cpuID].currentTask = &t;
+
+    pthread_mutex_lock(&currentMutex);
+}
+
 //schedule
 void schedule(int cpuID) {
 
-    if (request() == true) {
 
 
-        pthread_mutex_lock(&readyMutex);
+    if (algo == "SJF") {
+        WaitingQueueBurstsort();
+        ReadyQueueBurstsort();
+    }
+    else {
+        WaitingQueueprioritysort();
+        ReadyQueueprioritysort();
+    }
 
-        T t = ReadyQueue.front();
+    pthread_mutex_lock(&readyMutex);
+    pthread_mutex_lock(&waitingMutex);
 
-        ReadyQueue.erase(ReadyQueue.begin());
 
-        pthread_mutex_unlock(&readyMutex);
+    if (tempReq(ReadyQueue.front()) == 0 && tempReq(WaitingQueue.front()) == 1) {//ready goes through
 
+        context_switch(ReadyQueue.front(), cpuID);
+
+
+    }
+
+    else if (tempReq(ReadyQueue.front()) == 1 && tempReq(WaitingQueue.front()) == 0) {//waiting goes through
+
+        T temp = WaitingQueue.front();
+        WaitingQueue.erase(WaitingQueue.begin());
+
+        ReadyQueue.insert(ReadyQueue.begin(), temp);
+
+        context_switch(ReadyQueue.front(), cpuID);
+
+
+    }
+    else if (tempReq(ReadyQueue.front()) == 0 && tempReq(WaitingQueue.front()) == 0) {//both should be checked 
+        if (ReadyQueue.front().priority < WaitingQueue.front().priority) {//ready
+
+            context_switch(ReadyQueue.front(), cpuID);
+        }
+        else if (ReadyQueue.front().priority > WaitingQueue.front().priority) {//waiting
+
+            T temp = WaitingQueue.front();
+            WaitingQueue.erase(WaitingQueue.begin());
+
+            ReadyQueue.insert(ReadyQueue.begin(), temp);
+
+            context_switch(ReadyQueue.front(), cpuID);
+        }
+        else {//ready
+            context_switch(ReadyQueue.front(), cpuID);
+        }
+    }
+    else {//nothing goes through
         pthread_mutex_lock(&currentMutex);
 
-        cpu_datas[cpuID].currentTask = &t;
+        cpu_datas[cpuID].currentTask = NULL;
 
         pthread_mutex_lock(&currentMutex);
-
     }
 
 
@@ -284,56 +474,7 @@ void Terminate(T& task) {
     pthread_mutex_unlock(&waitingMutex);
 }
 
-//sort
-void WaitingQueueprioritysort() {
 
-    pthread_mutex_lock(&waitingMutex);
-
-    for (int i = 1; i < WaitingQueue.size(); i++) {
-        T var1 = WaitingQueue[i];
-        int j = i - 1;
-        while (j >= 0 && WaitingQueue[j].priority > var1.priority) {
-            WaitingQueue[j + 1] = WaitingQueue[j];
-            j--;
-        }
-        WaitingQueue[j + 1] = var1;
-    }
-    pthread_mutex_unlock(&waitingMutex);
-}
-
-void ReadyQueueprioritysort() {
-
-    pthread_mutex_lock(&readyMutex);
-
-    for (int i = 1; i < ReadyQueue.size(); i++) {
-        T var1 = ReadyQueue[i];
-        int j = i - 1;
-        while (j >= 0 && ReadyQueue[j].priority > var1.priority) {
-            ReadyQueue[j + 1] = ReadyQueue[j];
-            j--;
-        }
-        ReadyQueue[j + 1] = var1;
-    }
-
-    pthread_mutex_lock(&readyMutex);
-}
-
-void ReadyQueueBurstsort() {
-
-    pthread_mutex_lock(&readyMutex);
-
-    for (int i = 1; i < ReadyQueue.size(); i++) {
-        T var1 = ReadyQueue[i];
-        int j = i - 1;
-        while (j >= 0 && ReadyQueue[j].Burst > var1.Burst) {
-            ReadyQueue[j + 1] = ReadyQueue[j];
-            j--;
-        }
-        ReadyQueue[j + 1] = var1;
-    }
-
-    pthread_mutex_unlock(&readyMutex);
-}
 
 void start() {
 
