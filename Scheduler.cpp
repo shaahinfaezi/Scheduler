@@ -1,9 +1,11 @@
 #include <iostream>
+#include <stdio.h>
 #include <vector>
 #include <queue>
 #include <pthread.h>
 #include <time.h>
 #include <algorithm>
+
 using namespace std;
 
 #define cpuCount 4
@@ -201,7 +203,7 @@ void ReadyQueueprioritysort() {
         ReadyQueue[j + 1] = var1;
     }
 
-    pthread_mutex_lock(&readyMutex);
+    pthread_mutex_unlock(&readyMutex);
 }
 
 void ReadyQueueBurstsort() {
@@ -307,13 +309,11 @@ void context_switch(T& t, int cpuID) {
 
     cpu_datas[cpuID].currentTask = &t;
 
-    pthread_mutex_lock(&currentMutex);
+    pthread_mutex_unlock(&currentMutex);
 }
 
 //schedule
 void schedule(int cpuID) {
-
-
 
     if (algo == "SJF") {
         WaitingQueueBurstsort();
@@ -372,17 +372,23 @@ void schedule(int cpuID) {
         pthread_mutex_lock(&currentMutex);
     }
 
+    pthread_mutex_unlock(&readyMutex);
+    pthread_mutex_unlock(&waitingMutex);
+
 
 }
 
 //idle
 void idle(int cpuID) {
+
     pthread_mutex_lock(&readyMutex);
 
     while (ReadyQueue.size() == 0) {
         pthread_cond_wait(&idleCond, &readyMutex);
     }
-    pthread_mutex_lock(&readyMutex);
+    pthread_mutex_unlock(&readyMutex);
+
+
 
     schedule(cpuID);
 
@@ -496,7 +502,6 @@ void start() {
 
 
     pthread_mutex_init(&mainThread_mutex, NULL);
-    pthread_mutex_init(&readyMutex, NULL);
     pthread_mutex_init(&waitingMutex, NULL);
     pthread_mutex_init(&WR_mutex, NULL);
     pthread_mutex_init(&currentMutex, NULL);
@@ -579,9 +584,6 @@ void* CPU_thread(void* arguments) {
 
             pthread_mutex_unlock(&WR_mutex);
             break;
-        case CPU_Waiting:
-            //wakeup
-            break;
 
 
         default:
@@ -596,7 +598,7 @@ void* CPU_thread(void* arguments) {
 
 }
 
-void proccess(int cpuId, T currentTask) {
+void proccess(int cpuId, T& currentTask) {
 
     if (currentTask.Burst > 0) {
 
@@ -657,6 +659,8 @@ void print() {
     }
     cout << "]" << endl;
 
+    cout << "Waiting Queue :" << endl;
+
     cout << "[";
 
     for (int i = 0; i < WaitingQueue.size(); i++) {
@@ -666,6 +670,7 @@ void print() {
         if (i != WaitingQueue.size() - 1)
             cout << "-";
     }
+
     cout << "]" << endl;
 
     for (int i = 0; i < cpuCount; i++) {
@@ -673,7 +678,7 @@ void print() {
         cout << "CPU" << i + 1 << ":" << "[";
 
         if (cpu_datas[i].currentTask != NULL) {
-            cout << cpu_datas[i].currentTask->name;
+            cout << cpu_datas[i].currentTask->name << "     ";
         }
         else {
             cout << "Idle";
@@ -700,9 +705,12 @@ void* Main_thread(void* arguments) {
 
         for (int i = 0; i < cpuCount; i++) {
 
-            T nextTask;//=az safe ready va algorithm ha
+            if (cpu_datas[i].currentTask != NULL) {
 
-            proccess(i, nextTask);
+                T& nextTask = *cpu_datas[i].currentTask;
+
+                proccess(i, nextTask);
+            }
 
 
         }
@@ -718,9 +726,9 @@ void* Main_thread(void* arguments) {
 
         struct timespec tSpec;
 
-        tSpec.tv_sec = 1 / 1000000;
+        tSpec.tv_sec = 100 / 1000000;
 
-        tSpec.tv_nsec = (1 % 1000000) * 1000;
+        tSpec.tv_nsec = (100 % 1000000) * 1000;
 
         while (nanosleep(&tSpec, &tSpec) != 0);
 
@@ -738,24 +746,45 @@ void* Main_thread(void* arguments) {
 int main()
 {
 
-    cin >> algo;
+    string tempNames[1000];
+
+    char tempTasks_[100000];
+
+    int tempBursts[10000];
+
+    string algorithm;
+
+    cin.ignore();
+
+    cin >> algorithm;
+
+
+    algo = algorithm;
 
     cin >> R1num >> R2num >> R3num;
 
 
     cin >> n;
 
+
+    int i;
+
+    for (i = 0; i < n; i++) {
+
+        cin >> tempNames[i] >> tempTasks_[i] >> tempBursts[i];
+    }
+
+
+
     for (int i = 0; i < n; i++) {
 
         T tempTask = *new T();
 
-        char tempTasks;
+        char tempTasks = tempTasks_[i];
 
-        string tempName;
+        string tempName = tempNames[i];
 
-        int tempBurst;
-
-        cin >> tempName >> tempTasks >> tempBurst;
+        int tempBurst = tempBursts[i];
 
         tempTask.name = tempName;
 
@@ -809,16 +838,19 @@ int main()
 
     }
 
-    RR = false;
 
-    if (algo == "RR") {
+    RR = false;
+    pthread_mutex_init(&readyMutex, NULL);
+
+    if (algo.compare("RR") == 0) {
         ReadyQueueprioritysort();
         RR = true;
     }
-    else if (algo == "FCFS") {
+    else if (algo.compare("FCFS") == 0) {
+        cout << "kir";
         ReadyQueueprioritysort();
     }
-    else if (algo == "SJF") {
+    else if (algo.compare("SJF") == 0) {
         ReadyQueueBurstsort();
     }
 
