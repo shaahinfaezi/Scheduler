@@ -1,3 +1,4 @@
+
 #include <iostream>
 #include <stdio.h>
 #include <vector>
@@ -5,8 +6,13 @@
 #include <pthread.h>
 #include <time.h>
 #include <algorithm>
+#include <string.h>
+#include <string>
+#include <bits/stdc++.h>
 
 using namespace std;
+
+using std::basic_string;
 
 #define cpuCount 4
 
@@ -28,6 +34,12 @@ pthread_mutex_t waitingMutex;
 
 pthread_mutex_t WR_mutex;
 
+pthread_mutex_t R_mutex;
+
+pthread_mutex_t currentMutexs[4];
+
+int terminated_Proccesses;
+
 
 string algo;
 bool RR;
@@ -47,9 +59,9 @@ struct R {
 };
 
 enum Tasks {
-    X,
-    Y,
-    Z
+    X = 3,
+    Y = 2,
+    Z = 1
 };
 
 enum State {
@@ -120,11 +132,16 @@ void* Main_thread(void* arguments);
 
 void* CPU_thread(void* arguments);
 
+void print();
+
 
 pthread_cond_t idleCond;
-pthread_mutex_t currentMutex;
+pthread_cond_t idleCond2;
 
 int tempReq(T task) {//reverse nums for sort
+
+    pthread_mutex_lock(&R_mutex);
+
     if (task.Task == X) {
         if (R1num == 0 && R2num == 0) {
             return 1;
@@ -141,7 +158,7 @@ int tempReq(T task) {//reverse nums for sort
             return 0;
         }
     }
-    else { //else if (task.Task == Z) {
+    else if (task.Task == Z) {
         if (R1num == 0 && R3num == 0) {
             return 1;
         }
@@ -149,6 +166,12 @@ int tempReq(T task) {//reverse nums for sort
             return 0;
         }
     }
+    else {
+        exit(0);
+    }
+
+    pthread_mutex_unlock(&R_mutex);
+
 }
 
 
@@ -253,10 +276,15 @@ bool request() {
     T task = ReadyQueue.front();
     pthread_mutex_unlock(&readyMutex);
 
-    pthread_mutex_lock(&waitingMutex);
+
+    pthread_mutex_lock(&R_mutex);
+
     if (task.Task == X) {
         if (R1num == 0 && R2num == 0) {
+            pthread_mutex_lock(&waitingMutex);
             WaitingQueue.push_back(task);
+            pthread_mutex_unlock(&waitingMutex);
+            pthread_cond_signal(&idleCond2);
             return false;
         }
         else {
@@ -265,7 +293,10 @@ bool request() {
     }
     else if (task.Task == Y) {
         if (R3num == 0 && R2num == 0) {
+            pthread_mutex_lock(&waitingMutex);
             WaitingQueue.push_back(task);
+            pthread_mutex_unlock(&waitingMutex);
+            pthread_cond_signal(&idleCond2);
             return false;
         }
         else {
@@ -274,17 +305,26 @@ bool request() {
     }
     else { //else if (task.Task == Z) {
         if (R1num == 0 || R3num == 0) {
+            pthread_mutex_lock(&waitingMutex);
             WaitingQueue.push_back(task);
+            pthread_mutex_unlock(&waitingMutex);
+            pthread_cond_signal(&idleCond2);
             return false;
         }
         else {
             return true;
         }
     }
-    pthread_mutex_unlock(&waitingMutex);
+
+    pthread_mutex_unlock(&R_mutex);
 }
 
-void context_switch(T& t, int cpuID) {
+void context_switch(int cpuID) {
+
+
+    T t = ReadyQueue.front();
+
+    pthread_mutex_lock(&R_mutex);
 
     if (t.Task == X) {
         R1num--;
@@ -298,18 +338,22 @@ void context_switch(T& t, int cpuID) {
         R1num--;
         R3num--;
     }
+
+    pthread_mutex_unlock(&R_mutex);
+
+
     t.state = Running;
 
     ReadyQueue.erase(ReadyQueue.begin());
 
-    pthread_mutex_unlock(&readyMutex);
-    pthread_mutex_unlock(&waitingMutex);
 
-    pthread_mutex_lock(&currentMutex);
+    pthread_mutex_lock(&currentMutexs[cpuID]);
 
     cpu_datas[cpuID].currentTask = &t;
 
-    pthread_mutex_unlock(&currentMutex);
+    pthread_mutex_unlock(&currentMutexs[cpuID]);
+
+
 }
 
 //schedule
@@ -319,61 +363,129 @@ void schedule(int cpuID) {
         WaitingQueueBurstsort();
         ReadyQueueBurstsort();
     }
-    else {
+    else if (algo == "RR") {
         WaitingQueueprioritysort();
         ReadyQueueprioritysort();
     }
-
-    pthread_mutex_lock(&readyMutex);
-    pthread_mutex_lock(&waitingMutex);
-
-
-    if (tempReq(ReadyQueue.front()) == 0 && tempReq(WaitingQueue.front()) == 1) {//ready goes through
-
-        context_switch(ReadyQueue.front(), cpuID);
-
-
+    else {
+        WaitingQueueprioritysort();
     }
 
-    else if (tempReq(ReadyQueue.front()) == 1 && tempReq(WaitingQueue.front()) == 0) {//waiting goes through
+
+
+    if (WaitingQueue.size() == 0) {//waiting empty , ready ->
+        pthread_mutex_lock(&readyMutex);
+        context_switch(cpuID);
+        pthread_mutex_unlock(&readyMutex);
+    }
+    else if (ReadyQueue.size() == 0) {//ready empty ,waiting ->
+
+
+        pthread_mutex_lock(&waitingMutex);
 
         T temp = WaitingQueue.front();
+
         WaitingQueue.erase(WaitingQueue.begin());
+
+
+        pthread_mutex_unlock(&waitingMutex);
+
+        pthread_mutex_lock(&readyMutex);
 
         ReadyQueue.insert(ReadyQueue.begin(), temp);
 
-        context_switch(ReadyQueue.front(), cpuID);
+        context_switch(cpuID);
 
-
+        pthread_mutex_unlock(&readyMutex);
     }
-    else if (tempReq(ReadyQueue.front()) == 0 && tempReq(WaitingQueue.front()) == 0) {//both should be checked 
-        if (ReadyQueue.front().priority < WaitingQueue.front().priority) {//ready
+    else {//both not empty
 
-            context_switch(ReadyQueue.front(), cpuID);
+        if (tempReq(ReadyQueue.front()) == 0 && tempReq(WaitingQueue.front()) == 1) {//ready goes through
+
+            pthread_mutex_lock(&readyMutex);
+
+            context_switch(cpuID);
+
+            pthread_mutex_unlock(&readyMutex);
+
+
         }
-        else if (ReadyQueue.front().priority > WaitingQueue.front().priority) {//waiting
+
+        else if (tempReq(ReadyQueue.front()) == 1 && tempReq(WaitingQueue.front()) == 0) {//waiting goes through
+
+
+            pthread_mutex_lock(&waitingMutex);
 
             T temp = WaitingQueue.front();
             WaitingQueue.erase(WaitingQueue.begin());
 
+
+            pthread_mutex_unlock(&waitingMutex);
+
+            pthread_mutex_lock(&readyMutex);
+
             ReadyQueue.insert(ReadyQueue.begin(), temp);
 
-            context_switch(ReadyQueue.front(), cpuID);
+            context_switch(cpuID);
+
+            pthread_mutex_unlock(&readyMutex);
+
+
         }
-        else {//ready
-            context_switch(ReadyQueue.front(), cpuID);
+        else if (tempReq(ReadyQueue.front()) == 0 && tempReq(WaitingQueue.front()) == 0) {//both should be checked 
+            if (ReadyQueue.front().priority < WaitingQueue.front().priority) {//ready
+
+                pthread_mutex_lock(&readyMutex);
+
+                context_switch(cpuID);
+
+                pthread_mutex_unlock(&readyMutex);
+            }
+            else if (ReadyQueue.front().priority > WaitingQueue.front().priority) {//waiting
+
+
+
+                pthread_mutex_lock(&waitingMutex);
+
+                T temp = WaitingQueue.front();
+
+                WaitingQueue.erase(WaitingQueue.begin());
+
+
+                pthread_mutex_unlock(&waitingMutex);
+
+                pthread_mutex_lock(&readyMutex);
+
+                ReadyQueue.insert(ReadyQueue.begin(), temp);
+
+                context_switch(cpuID);
+
+                pthread_mutex_unlock(&readyMutex);
+            }
+            else {//ready
+
+                pthread_mutex_lock(&readyMutex);
+
+                context_switch(cpuID);
+
+                pthread_mutex_unlock(&readyMutex);
+            }
         }
+        else {//nothing goes through
+            pthread_mutex_lock(&currentMutexs[cpuID]);
+
+            cpu_datas[cpuID].currentTask = NULL;
+
+            pthread_mutex_unlock(&currentMutexs[cpuID]);
+
+
+
+        }
+
+
+
     }
-    else {//nothing goes through
-        pthread_mutex_lock(&currentMutex);
 
-        cpu_datas[cpuID].currentTask = NULL;
-
-        pthread_mutex_lock(&currentMutex);
-    }
-
-    pthread_mutex_unlock(&readyMutex);
-    pthread_mutex_unlock(&waitingMutex);
 
 
 }
@@ -382,12 +494,14 @@ void schedule(int cpuID) {
 void idle(int cpuID) {
 
     pthread_mutex_lock(&readyMutex);
+    pthread_mutex_lock(&waitingMutex);
 
-    while (ReadyQueue.size() == 0) {
+    while (ReadyQueue.size() == 0 && WaitingQueue.size() == 0) {
         pthread_cond_wait(&idleCond, &readyMutex);
+        pthread_cond_wait(&idleCond2, &waitingMutex);
     }
     pthread_mutex_unlock(&readyMutex);
-
+    pthread_mutex_unlock(&waitingMutex);
 
 
     schedule(cpuID);
@@ -404,6 +518,7 @@ void RRpushback(T& task) {
 
     ReadyQueue.push_back(task);
     pthread_cond_broadcast(&idleCond);
+    pthread_cond_broadcast(&idleCond2);
 
     pthread_mutex_unlock(&readyMutex);
 }
@@ -456,7 +571,9 @@ void age_all() {
 
 
 //terminate
-void Terminate(T& task) {
+void Terminate(int cpuID, T task) {
+
+
 
     pthread_mutex_lock(&readyMutex);
     for (int i = 0; i < ReadyQueue.size(); i++) {
@@ -478,6 +595,17 @@ void Terminate(T& task) {
     }
 
     pthread_mutex_unlock(&waitingMutex);
+
+
+
+    pthread_mutex_lock(&currentMutexs[cpuID]);
+
+    cpu_datas[cpuID].currentTask = NULL;
+
+    pthread_mutex_unlock(&currentMutexs[cpuID]);
+
+
+
 }
 
 
@@ -498,13 +626,17 @@ void start() {
 
         pthread_cond_init(&cpu_datas[i].wake, NULL);
 
+        pthread_mutex_init(&currentMutexs[i], NULL);
+
     }
 
 
     pthread_mutex_init(&mainThread_mutex, NULL);
     pthread_mutex_init(&waitingMutex, NULL);
     pthread_mutex_init(&WR_mutex, NULL);
-    pthread_mutex_init(&currentMutex, NULL);
+
+    pthread_mutex_init(&R_mutex, NULL);
+
 
 
     for (int i = 0; i < cpuCount; i++) {
@@ -562,27 +694,35 @@ void* CPU_thread(void* arguments) {
         switch (currentState)
         {
         case CPU_Terminate:
-            pthread_mutex_lock(&WR_mutex);
+            //pthread_mutex_lock(&WR_mutex);
 
-            Terminate(*cpu_datas[cpuID].currentTask);
+            pthread_mutex_lock(&mainThread_mutex);
+            terminated_Proccesses++;
 
-            pthread_mutex_unlock(&WR_mutex);
+            pthread_mutex_unlock(&mainThread_mutex);
+
+            Terminate(cpuID, *cpu_datas[cpuID].currentTask);
+
+
+
+            //pthread_mutex_unlock(&WR_mutex);
 
             break;
         case CPU_Idle:
-            pthread_mutex_lock(&WR_mutex);
+            //pthread_mutex_lock(&WR_mutex);
 
 
             idle(cpuID);
 
-            pthread_mutex_unlock(&WR_mutex);
+            //pthread_mutex_unlock(&WR_mutex);
             break;
         case CPU_Preempt:
-            pthread_mutex_lock(&WR_mutex);
+            //pthread_mutex_lock(&WR_mutex);
 
             preempt(*cpu_datas[cpuID].currentTask, cpuID);
 
-            pthread_mutex_unlock(&WR_mutex);
+
+            //pthread_mutex_unlock(&WR_mutex);
             break;
 
 
@@ -644,7 +784,13 @@ void proccess(int cpuId, T& currentTask) {
 
 void print() {
 
+    pthread_mutex_lock(&R_mutex);
+
     cout << " R1 : " << R1num << " R2 : " << R2num << " R3 : " << R3num << endl;
+
+    pthread_mutex_unlock(&R_mutex);
+
+    pthread_mutex_lock(&readyMutex);
 
     cout << "Ready Queue :" << endl;
 
@@ -657,11 +803,15 @@ void print() {
         if (i != ReadyQueue.size() - 1)
             cout << "-";
     }
+
+    pthread_mutex_unlock(&readyMutex);
     cout << "]" << endl;
 
     cout << "Waiting Queue :" << endl;
 
     cout << "[";
+
+    pthread_mutex_lock(&waitingMutex);
 
     for (int i = 0; i < WaitingQueue.size(); i++) {
 
@@ -672,6 +822,8 @@ void print() {
     }
 
     cout << "]" << endl;
+
+    pthread_mutex_unlock(&waitingMutex);
 
     for (int i = 0; i < cpuCount; i++) {
 
@@ -699,7 +851,10 @@ void* Main_thread(void* arguments) {
         pthread_mutex_lock(&mainThread_mutex);
 
 
-        if (ReadyQueue.size() == 0 and WaitingQueue.size() == 0) {
+        if (terminated_Proccesses >= n) {
+
+
+
             exit(0);
         }
 
@@ -717,6 +872,8 @@ void* Main_thread(void* arguments) {
 
         CLOCK++;
 
+        cout << endl << "Time :" << CLOCK << endl;
+
         print();
 
         pthread_mutex_unlock(&mainThread_mutex);
@@ -724,13 +881,19 @@ void* Main_thread(void* arguments) {
 
         //sleep
 
-        struct timespec tSpec;
+        long int time = 1 * 1000000;
 
-        tSpec.tv_sec = 100 / 1000000;
+        usleep(time);
 
-        tSpec.tv_nsec = (100 % 1000000) * 1000;
+        /* struct timespec tSpec;
 
-        while (nanosleep(&tSpec, &tSpec) != 0);
+        tSpec.tv_sec=time/1000000;
+
+        tSpec.tv_nsec=(time%1000000)*1000;
+
+        while(nanosleep(&tSpec,&tSpec)!=0);
+
+        */
 
 
     }
@@ -752,14 +915,11 @@ int main()
 
     int tempBursts[10000];
 
-    string algorithm;
+    //cin.ignore();
 
-    cin.ignore();
-
-    cin >> algorithm;
+    cin >> algo;
 
 
-    algo = algorithm;
 
     cin >> R1num >> R2num >> R3num;
 
@@ -798,6 +958,7 @@ int main()
 
         if (tempTasks == 'X') {
 
+
             tempTask.Task = X;
 
             tempTask.priority = 3;
@@ -830,8 +991,12 @@ int main()
             tempTask.R_needed[1] = R3;
 
         }
+        else {
+            exit(1);
+        }
 
         ReadyQueue.push_back(tempTask);
+
 
 
 
@@ -842,25 +1007,29 @@ int main()
     RR = false;
     pthread_mutex_init(&readyMutex, NULL);
 
-    if (algo.compare("RR") == 0) {
+    if (algo == "RR") {
         ReadyQueueprioritysort();
         RR = true;
     }
-    else if (algo.compare("FCFS") == 0) {
-        cout << "kir";
-        ReadyQueueprioritysort();
+    else if (algo == "FCFS") {
+        //ReadyQueueprioritysort();
     }
-    else if (algo.compare("SJF") == 0) {
+    else if (algo == "SJF") {
         ReadyQueueBurstsort();
     }
-
+    else {
+        exit(0);
+    }
 
     start();
+
+
+    pthread_join(mainThread, NULL);
 
     for (int i = 0; i < 4; i++) {
         pthread_join(cpuThreads[i], NULL);
     }
-    pthread_join(mainThread, NULL);
+
 
 
 
