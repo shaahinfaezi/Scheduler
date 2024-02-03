@@ -666,7 +666,11 @@ void age_all() {
 
 
 //terminate
-void Terminate(int cpuID, T task) {
+void Terminate(int cpuID) {
+
+    pthread_mutex_lock(&currentMutexs[cpuID]);
+
+    T task = *cpu_datas[cpuID].currentTask;
 
     pthread_mutex_lock(&R_mutex);
 
@@ -689,9 +693,9 @@ void Terminate(int cpuID, T task) {
 
 
 
-    pthread_mutex_lock(&currentMutexs[cpuID]);
-
     cpu_datas[cpuID].currentTask = NULL;
+
+
 
     pthread_mutex_unlock(&currentMutexs[cpuID]);
 
@@ -797,7 +801,7 @@ void* CPU_thread(void* arguments) {
 
             RW_LOCK.writerLock();
 
-            Terminate(cpuID, *cpu_datas[cpuID].currentTask);
+            Terminate(cpuID);
 
             RW_LOCK.writerUnlock();
 
@@ -840,9 +844,13 @@ void proccess(int cpuId, T& currentTask) {
 
         currentTask.CpuTime++;
 
-        cpu_datas[cpuId].preemtionTimer--;
+        if (RR) {
 
-        if (cpu_datas[cpuId].preemtionTimer == 0)
+            cpu_datas[cpuId].preemtionTimer--;
+
+        }
+
+        if (RR && cpu_datas[cpuId].preemtionTimer == 0)
 
         {
             cpu_datas[cpuId].state = CPU_Preempt;
@@ -976,6 +984,8 @@ void* Main_thread(void* arguments) {
 
         CLOCK++;
 
+        age_all();
+
         cout << endl << "Time :" << CLOCK << endl;
 
         print();
@@ -987,17 +997,16 @@ void* Main_thread(void* arguments) {
 
         long int time = 1 * 1000000;
 
-        usleep(time);
+        //usleep(time);
 
-        /* struct timespec tSpec;
+        struct timespec tSpec;
 
-        tSpec.tv_sec=time/1000000;
+        tSpec.tv_sec = time / 1000000;
 
-        tSpec.tv_nsec=(time%1000000)*1000;
+        tSpec.tv_nsec = (time % 1000000) * 1000;
 
-        while(nanosleep(&tSpec,&tSpec)!=0);
+        while (nanosleep(&tSpec, &tSpec) != 0);
 
-        */
 
 
     }
