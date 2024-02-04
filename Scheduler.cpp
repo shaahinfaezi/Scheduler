@@ -16,7 +16,7 @@ using std::basic_string;
 
 #define cpuCount 4
 
-#define TimeQ 3
+int TimeQ = 3;
 
 #define WakeupTime 3
 
@@ -26,9 +26,15 @@ pthread_t mainThread;
 
 long long int CLOCK; //time
 
+int RunNum;
+
 pthread_mutex_t mainThread_mutex;
 
 pthread_mutex_t readyMutex;
+
+pthread_mutex_t readyMutex2;
+
+pthread_mutex_t readyMutex3;
 
 pthread_mutex_t waitingMutex;
 
@@ -38,6 +44,10 @@ pthread_mutex_t WR_mutex;
 
 pthread_mutex_t R_mutex;
 
+pthread_mutex_t level_mutex;
+
+pthread_mutex_t RunNum_mutex;
+
 pthread_mutex_t currentMutexs[4];
 
 int terminated_Proccesses;
@@ -45,6 +55,8 @@ int terminated_Proccesses;
 string algo;
 
 bool RR;
+
+int level;
 
 
 enum Resources {
@@ -96,6 +108,8 @@ struct T {
 
     int CpuTime;
 
+    float HRRN;
+
     int Burst;
 
     int agetime;
@@ -114,6 +128,13 @@ struct CPU_data {
 };
 
 vector<T> ReadyQueue;
+
+vector<T> ReadyQueue1;
+
+vector<T> ReadyQueue2;
+
+vector<T> ReadyQueue3;
+
 
 vector<T> WaitingQueue;
 
@@ -183,6 +204,28 @@ IRWL RW_LOCK;
 void WaitingToReady();
 
 int tempReq(T task);
+
+
+
+void QueueToReady() {
+    pthread_mutex_lock(&readyMutex);
+    pthread_mutex_lock(&level_mutex);
+    if (level == 2) {
+        TimeQ = TimeQ * 2;
+        for (int i = ReadyQueue2.size() - 1; i >= 0; i--) {
+            ReadyQueue.push_back(ReadyQueue2[i]);
+        }
+    }
+    if (level == 3) {
+        RR = false;
+        algo = "FCFS";
+        for (int i = ReadyQueue3.size() - 1; i >= 0; i--) {
+            ReadyQueue.push_back(ReadyQueue3[i]);
+        }
+    }
+    pthread_mutex_unlock(&readyMutex);
+    pthread_mutex_unlock(&level_mutex);
+}
 
 
 void WaitingToReady() {
@@ -363,6 +406,22 @@ void WaitingQueueBurstsort() {
 
     pthread_mutex_unlock(&waitingMutex);
 }
+void ReadyQueueHRRRN() {
+
+    pthread_mutex_lock(&readyMutex);
+
+    for (int i = 1; i < ReadyQueue.size(); i++) {
+        T var1 = ReadyQueue[i];
+        int j = i - 1;
+        while (j >= 0 && ReadyQueue[j].HRRN > var1.HRRN) {
+            ReadyQueue[j + 1] = ReadyQueue[j];
+            j--;
+        }
+        ReadyQueue[j + 1] = var1;
+    }
+
+    pthread_mutex_unlock(&readyMutex);
+}
 
 
 //request
@@ -451,7 +510,7 @@ void schedule(int cpuID) {//check
         WaitingQueueBurstsort();
         ReadyQueueBurstsort();
     }
-    else if (algo == "RR") {
+    else if (RR == true) {
         WaitingQueueprioritysort();
     }
     else {
@@ -630,6 +689,91 @@ void RRpushback(T& task) {
     pthread_mutex_unlock(&readyMutex);
 }
 
+void MFQPreempt(int cpuID) {
+    pthread_mutex_lock(&currentMutexs[cpuID]);
+
+    T& currentTask = *cpu_datas[cpuID].currentTask;
+
+    pthread_mutex_lock(&R_mutex);
+
+    if (currentTask.Task == X) {
+        R1num++;
+        R2num++;
+    }
+    else if (currentTask.Task == Y) {
+        R2num++;
+        R3num++;
+    }
+    else if (currentTask.Task == Z) {
+        R1num++;
+        R3num++;
+    }
+
+    pthread_mutex_unlock(&R_mutex);
+
+    pthread_mutex_lock(&level_mutex);
+    if (level == 1) {
+
+        pthread_mutex_lock(&readyMutex2);
+
+        ReadyQueue2.push_back(currentTask);
+
+        pthread_mutex_unlock(&readyMutex2);
+
+
+    }
+    else if (level == 2) {
+        pthread_mutex_lock(&readyMutex3);
+
+        ReadyQueue3.push_back(currentTask);
+
+        pthread_mutex_unlock(&readyMutex3);
+    }
+    pthread_mutex_unlock(&level_mutex);
+
+    pthread_mutex_unlock(&currentMutexs[cpuID]);
+
+
+    WaitingQueueprioritysort();
+
+
+    WaitingToReady();
+
+
+    pthread_mutex_lock(&RunNum_mutex);
+
+    RunNum++;
+
+    pthread_mutex_unlock(&RunNum_mutex);
+
+    if (RunNum >= n) {
+        bool check = true;
+        for (int i = 0; i < cpuCount; i++) {
+            pthread_mutex_lock(&currentMutexs[i]);
+            if (cpu_datas[i].currentTask != NULL)
+                check = false;
+            pthread_mutex_unlock(&currentMutexs[i]);
+        }
+        if (check == true) {
+            pthread_mutex_lock(&RunNum_mutex);
+
+            RunNum = 0;
+
+            pthread_mutex_unlock(&RunNum_mutex);
+            RW_LOCK.writerLock();
+            pthread_mutex_lock(&level_mutex);
+            level++;
+            pthread_mutex_unlock(&level_mutex);
+            RW_LOCK.writerUnlock();
+            QueueToReady();
+        }
+
+    }
+    RW_LOCK.writerLock();
+    schedule(cpuID);
+    RW_LOCK.writerUnlock();
+}
+
 
 //preempt
 void preempt(int cpuID) {
@@ -663,7 +807,7 @@ void preempt(int cpuID) {
     if (algo == "SJF") {
         WaitingQueueBurstsort();
     }
-    else if (algo == "RR") {
+    else if (RR == true) {
         WaitingQueueprioritysort();
     }
     else {
@@ -714,7 +858,24 @@ void age_all() {
     pthread_mutex_unlock(&waitingMutex);
 }
 
+void HRRN_INIT() {
+    pthread_mutex_lock(&waitingMutex);
+    pthread_mutex_lock(&readyMutex);
 
+
+    for (int i = 0; i < ReadyQueue.size(); i++) {
+        ReadyQueue[i].HRRN = (float)(((float)CLOCK + (float)ReadyQueue[i].Burst) / (float)ReadyQueue[i].Burst);
+    }
+
+    for (int i = 0; i < WaitingQueue.size(); i++) {
+        WaitingQueue[i].HRRN = (float)(((float)CLOCK + (float)WaitingQueue[i].Burst) / (float)WaitingQueue[i].Burst);
+
+    }
+
+
+    pthread_mutex_unlock(&readyMutex);
+    pthread_mutex_unlock(&waitingMutex);
+}
 
 
 //terminate
@@ -747,12 +908,45 @@ void Terminate(int cpuID) {
     else if (algo == "RR") {
         WaitingQueueprioritysort();
     }
-    else {
+    else if (algo == "FCFS") {
         WaitingQueueprioritysort();
+    }
+    else if (algo == "HRRN") {
+        HRRN_INIT();
+        WaitingQueueprioritysort();
+        ReadyQueueHRRRN();
     }
 
 
     WaitingToReady();
+
+    pthread_mutex_lock(&RunNum_mutex);
+
+    RunNum++;
+
+    pthread_mutex_unlock(&RunNum_mutex);
+    if (RunNum >= n) {
+        bool check = true;
+        for (int i = 0; i < cpuCount; i++) {
+            pthread_mutex_lock(&currentMutexs[i]);
+            if (cpu_datas[i].currentTask != NULL)
+                check = false;
+            pthread_mutex_unlock(&currentMutexs[i]);
+        }
+        if (check == true) {
+            pthread_mutex_lock(&RunNum_mutex);
+
+            RunNum = 0;
+
+            pthread_mutex_unlock(&RunNum_mutex);
+            RW_LOCK.writerLock();
+            pthread_mutex_lock(&level_mutex);
+            level++;
+            pthread_mutex_unlock(&level_mutex);
+            RW_LOCK.writerUnlock();
+            QueueToReady();
+        }
+    }
 
 
 
@@ -790,6 +984,8 @@ void start() {
 
     }
 
+    RunNum = 0;
+
 
     pthread_mutex_init(&mainThread_mutex, NULL);
     pthread_mutex_init(&waitingMutex, NULL);
@@ -798,6 +994,10 @@ void start() {
     pthread_mutex_init(&R_mutex, NULL);
 
     pthread_mutex_init(&idleMutex, NULL);
+
+    pthread_mutex_init(&level_mutex, NULL);
+
+    pthread_mutex_init(&RunNum_mutex, NULL);
 
 
     RW_LOCK = *new IRWL();
@@ -886,7 +1086,14 @@ void* CPU_thread(void* arguments) {
         case CPU_Preempt:
             RW_LOCK.writerLock();
 
-            preempt(cpuID);
+            if (algo == "MFQ") {
+                MFQPreempt(cpuID);
+            }
+            else {
+                preempt(cpuID);
+            }
+
+
 
 
             RW_LOCK.writerUnlock();
@@ -956,6 +1163,25 @@ void proccess(int cpuId, T& currentTask) {
 void print() {
 
     RW_LOCK.readerLock();
+    if (algo == "MFQ") {
+        cout << "level : " << level << " " << RunNum << endl;
+
+        cout << "Ready Queue2 :" << endl;
+
+        cout << "[";
+
+        for (int i = 0; i < ReadyQueue2.size(); i++) {
+
+            cout << ReadyQueue2[i].name;
+
+            if (i != ReadyQueue2.size() - 1)
+                cout << "-";
+        }
+
+        cout << "]" << endl;
+
+
+    }
 
     cout << " R1 : " << R1num << " R2 : " << R2num << " R3 : " << R3num << endl;
 
@@ -1185,6 +1411,10 @@ int main()
     RR = false;
     pthread_mutex_init(&readyMutex, NULL);
 
+    pthread_mutex_init(&readyMutex2, NULL);
+
+    pthread_mutex_init(&readyMutex3, NULL);
+
     if (algo == "RR") {
         RR = true;
     }
@@ -1193,6 +1423,16 @@ int main()
     }
     else if (algo == "SJF") {
         ReadyQueueBurstsort();
+    }
+    else if (algo == "HRRN") {
+
+    }
+    else if (algo == "MFQ") {
+        level = 1;
+        RR = true;
+        for (int i = 0; i < ReadyQueue.size(); i++) {
+            ReadyQueue1.push_back(ReadyQueue[i]);
+        }
     }
     else {
         exit(0);
