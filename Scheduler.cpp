@@ -32,6 +32,8 @@ pthread_mutex_t readyMutex;
 
 pthread_mutex_t waitingMutex;
 
+pthread_mutex_t idleMutex;
+
 pthread_mutex_t WR_mutex;
 
 pthread_mutex_t R_mutex;
@@ -178,7 +180,38 @@ private:
 
 IRWL RW_LOCK;
 
+void WaitingToReady();
 
+int tempReq(T task);
+
+
+void WaitingToReady() {
+
+    pthread_mutex_lock(&readyMutex);
+    pthread_mutex_lock(&waitingMutex);
+
+    bool x = false;
+    while (x == false && WaitingQueue.size() > 0)
+    {
+        if (tempReq(WaitingQueue.front()) == 0) {
+            T temp = WaitingQueue.front();
+
+            ReadyQueue.push_back(temp);
+
+            WaitingQueue.erase(WaitingQueue.begin());
+
+        }
+        else {
+            x = true;
+        }
+    }
+
+
+
+
+    pthread_mutex_unlock(&waitingMutex);
+    pthread_mutex_unlock(&readyMutex);
+}
 
 int tempReq(T task) {//reverse nums for sort
 
@@ -249,6 +282,7 @@ void WaitingQueueprioritysort() {//check
         struct MyEntry m = *new struct MyEntry();
 
         m.first = tempReq(WaitingQueue[i]);
+
 
         m.second = WaitingQueue[i].priority;
 
@@ -390,6 +424,8 @@ bool request(T task) {
 
 void context_switch(int cpuID) {
 
+
+
     T t = ReadyQueue.front();
 
     pthread_mutex_lock(&currentMutexs[cpuID]);
@@ -401,6 +437,9 @@ void context_switch(int cpuID) {
     pthread_mutex_unlock(&currentMutexs[cpuID]);
 
     ReadyQueue.erase(ReadyQueue.begin());
+
+    //cout<<cpu_datas[cpuID].currentTask->name<<endl;
+
 
 
 }
@@ -564,12 +603,12 @@ void schedule(int cpuID) {//check
 //idle
 void idle(int cpuID) {
 
-    pthread_mutex_lock(&readyMutex);
+    pthread_mutex_lock(&idleMutex);
 
-    while (ReadyQueue.size() == 0 && WaitingQueue.size() == 0) {
-        pthread_cond_wait(&idleCond, &readyMutex);
+    while (ReadyQueue.size() == 0) {
+        pthread_cond_wait(&idleCond, &idleMutex);
     }
-    pthread_mutex_unlock(&readyMutex);
+    pthread_mutex_unlock(&idleMutex);
 
     RW_LOCK.writerLock();
     schedule(cpuID);
@@ -599,6 +638,8 @@ void preempt(int cpuID) {
 
     T& currentTask = *cpu_datas[cpuID].currentTask;
 
+    pthread_mutex_lock(&R_mutex);
+
     if (currentTask.Task == X) {
         R1num++;
         R2num++;
@@ -612,12 +653,30 @@ void preempt(int cpuID) {
         R3num++;
     }
 
+    pthread_mutex_unlock(&R_mutex);
+
 
     RRpushback(currentTask);
 
     pthread_mutex_unlock(&currentMutexs[cpuID]);
 
+    if (algo == "SJF") {
+        WaitingQueueBurstsort();
+    }
+    else if (algo == "RR") {
+        WaitingQueueprioritysort();
+    }
+    else {
+        WaitingQueueprioritysort();
+    }
+
+
+    WaitingToReady();
+
+
+    RW_LOCK.writerLock();
     schedule(cpuID);
+    RW_LOCK.writerUnlock();
 
 
 
@@ -680,9 +739,22 @@ void Terminate(int cpuID) {
         R3num++;
     }
 
-
-
     pthread_mutex_unlock(&R_mutex);
+
+    if (algo == "SJF") {
+        WaitingQueueBurstsort();
+    }
+    else if (algo == "RR") {
+        WaitingQueueprioritysort();
+    }
+    else {
+        WaitingQueueprioritysort();
+    }
+
+
+    WaitingToReady();
+
+
 
 
 
@@ -691,6 +763,8 @@ void Terminate(int cpuID) {
 
 
     pthread_mutex_unlock(&currentMutexs[cpuID]);
+
+
 
 }
 
@@ -722,6 +796,8 @@ void start() {
     pthread_mutex_init(&WR_mutex, NULL);
 
     pthread_mutex_init(&R_mutex, NULL);
+
+    pthread_mutex_init(&idleMutex, NULL);
 
 
     RW_LOCK = *new IRWL();
@@ -915,7 +991,7 @@ void print() {
 
 
 
-    RW_LOCK.readerUnlock();
+
 
     for (int i = 0; i < cpuCount; i++) {
 
@@ -943,7 +1019,7 @@ void print() {
 
 
 
-
+    RW_LOCK.readerUnlock();
 
 
 }
