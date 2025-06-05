@@ -2,6 +2,12 @@
 Multi-Processor System Simulator
 
 
+## Overview
+
+This project is a Multi-Processor System Simulator implemented in C++. It simulates the scheduling of processes across multiple processors, allowing users to experiment with different scheduling algorithms and analyze their performance in a multi-processor environment. The simulator models key aspects of process execution, such as CPU allocation, process states (e.g., ready, running, waiting), and performance metrics like turnaround time, waiting time, and CPU utilization. The goal is to provide a flexible framework for studying and comparing scheduling strategies in a controlled, simulated environment.
+
+The simulator is designed to be extensible, supporting various scheduling algorithms (e.g., First-Come-First-Serve, Round-Robin, Shortest Job First) and configurable system parameters such as the number of processors, process arrival times, and burst times. It is an educational tool for understanding operating system concepts and evaluating the efficiency of scheduling policies.
+
 ## Features
 
 - Multi-Processor Support: Simulates process execution across multiple processors, allowing for parallel processing and load balancing.
@@ -50,10 +56,3 @@ Multi-Processor System Simulator
 
 
 - Cross-Platform Compatibility: Written in standard C++, ensuring compatibility across different operating systems with minimal dependencies.
-
-
-## Overview
-
-This project is a Multi-Processor System Simulator implemented in C++. It simulates the scheduling of processes across multiple processors, allowing users to experiment with different scheduling algorithms and analyze their performance in a multi-processor environment. The simulator models key aspects of process execution, such as CPU allocation, process states (e.g., ready, running, waiting), and performance metrics like turnaround time, waiting time, and CPU utilization. The goal is to provide a flexible framework for studying and comparing scheduling strategies in a controlled, simulated environment.
-
-The simulator is designed to be extensible, supporting various scheduling algorithms (e.g., First-Come-First-Serve, Round-Robin, Shortest Job First) and configurable system parameters such as the number of processors, process arrival times, and burst times. It is an educational tool for understanding operating system concepts and evaluating the efficiency of scheduling policies.
