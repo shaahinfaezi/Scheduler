@@ -27,10 +27,14 @@ Multi-Processor System Simulator
   
   
   Priority Scheduling
+    
   
-Highest-Response-Ratio-Next/HRRN 
-
-Multilevel Feedback Queue
+  
+  Highest-Response-Ratio-Next/HRRN 
+  
+  
+  
+  Multilevel Feedback Queue
 
 
 - Input Flexibility: Accepts input via configuration files or command-line arguments to define processes and system parameters.
